@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "adc.h"
 #include "dma.h"
 #include "i2c.h"
 #include "rtc.h"
@@ -73,12 +74,25 @@ StaticJsonDocument<200> doc;
 char buffer[200];
 RTC_TimeTypeDef sTime;
 u8g2_t u8g2;
+uint16_t get_adc()
+{
+  // start ADC1
+  HAL_ADC_Start(&hadc1);
+  // wait ADC finishment，timeout:100ms
+  HAL_ADC_PollForConversion(&hadc1, 100);
+  // check conversion state
+  if (HAL_IS_BIT_SET(HAL_ADC_GetState(&hadc1), HAL_ADC_STATE_REG_EOC))
+  {
+    return HAL_ADC_GetValue(&hadc1);
+  }
+  return 0;
+}
 /* USER CODE END 0 */
 
 /**
- * @brief  The application entry point.
- * @retval int
- */
+  * @brief  The application entry point.
+  * @retval int
+  */
 int main(void)
 {
   /* USER CODE BEGIN 1 */
@@ -109,10 +123,12 @@ int main(void)
   MX_TIM1_Init();
   MX_RTC_Init();
   MX_TIM2_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
   HAL_TIM_Base_Start(&htim1); // enable us delay timer
   HAL_TIM_Base_Start_IT(&htim2);
+
   u8g2Init(&u8g2);
   HAL_Delay(1000);
 
@@ -123,11 +139,14 @@ int main(void)
   u8g2_FirstPage(&u8g2);
   while (1)
   {
+    int a = get_adc();
     // HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
     // // auto str = fmt::format("Time:{}", sTime.Seconds);
     // auto str = "Time:" + to_string(sTime.Hours) + ":" + to_string(sTime.Seconds);
-    // draw(&u8g2, (char *)str.c_str());
-    // HAL_Delay(100);
+    auto c = (char *)(to_string(a) + "\n").c_str();
+    // drawStr(&u8g2, (char *)to_string(a).c_str());
+    HAL_UART_Transmit_DMA(&huart1, (uint8_t *)c, strlen(c));
+    HAL_Delay(1000);
     // do
     // {
 
@@ -143,9 +162,9 @@ int main(void)
 }
 
 /**
- * @brief System Clock Configuration
- * @retval None
- */
+  * @brief System Clock Configuration
+  * @retval None
+  */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -153,9 +172,9 @@ void SystemClock_Config(void)
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
-   * in the RCC_OscInitTypeDef structure.
-   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_HSE;
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
@@ -169,8 +188,9 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-   */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
@@ -180,8 +200,9 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_ADC;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -211,7 +232,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
       doc["message"] = "Start";
       serializeJsonPretty(doc, buffer, 200);
       HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, strlen(buffer));
-      draw(&u8g2, (char *)"Recording...");
+      drawStr(&u8g2, (char *)"Recording...");
     }
     else
     {
@@ -222,7 +243,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
       HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, strlen(buffer));
       auto str = "Duration:" + to_string(temp) + "ms";
-      draw(&u8g2, (char *)str.c_str());
+      drawStr(&u8g2, (char *)str.c_str());
       time = 0;
       started = false;
     }
@@ -240,9 +261,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 /* USER CODE END 4 */
 
 /**
- * @brief  This function is executed in case of error occurrence.
- * @retval None
- */
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -256,14 +277,14 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef USE_FULL_ASSERT
+#ifdef  USE_FULL_ASSERT
 /**
- * @brief  Reports the name of the source file and the source line number
- *         where the assert_param error has occurred.
- * @param  file: pointer to the source file name
- * @param  line: assert_param error line source number
- * @retval None
- */
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */

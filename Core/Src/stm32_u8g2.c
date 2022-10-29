@@ -110,15 +110,24 @@ void u8g2Init(u8g2_t *u8g2)
     u8g2_ClearBuffer(u8g2);
 }
 
-void draw(u8g2_t *u8g2, char *str)
+void drawStr(u8g2_t *u8g2, char *str)
 {
     u8g2_ClearBuffer(u8g2);
-
+    // int i, y;
+    // // u8x8 does not wrap lines.
+    // y = 20;
+    // for (i = 0; i < strlen(str); i++)
+    // {
+    //     if ((i % 14) == 0 && i != 0)
+    //         y += 20;
+    //     u8g2_DrawStr(u8g2, i % 14 * 9, y, str[i]);
+    // }
+    // u8g2_SetDrawColor(u8g2, 1);
     u8g2_SetFontMode(u8g2, 1);         /*字体模式选择*/
     u8g2_SetFontDirection(u8g2, 0);    /*字体方向选择*/
     u8g2_SetFont(u8g2, u8g_font_9x15); /*字库选择*/
     // u8g2_DrawDisc();
-    u8g2_DrawStr(u8g2, 0, 64, str);
+    u8g2_DrawStr(u8g2, 0, 20, str);
 
     // u8g2_SetFontDirection(u8g2, 1);
     // u8g2_SetFont(u8g2, u8g2_font_inb30_mn);
