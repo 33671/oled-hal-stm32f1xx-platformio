@@ -20,6 +20,7 @@
 #include "main.h"
 #include "dma.h"
 #include "i2c.h"
+#include "rtc.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -70,7 +71,8 @@ void SystemClock_Config(void);
 char wrongMessage[] = "error";
 StaticJsonDocument<200> doc;
 char buffer[200];
-
+RTC_TimeTypeDef sTime;
+u8g2_t u8g2;
 /* USER CODE END 0 */
 
 /**
@@ -105,44 +107,34 @@ int main(void)
   MX_DMA_Init();
   MX_USART1_UART_Init();
   MX_TIM1_Init();
+  MX_RTC_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  HAL_TIM_Base_Start(&htim1); //用于开启微秒级定时器
-  u8g2_t u8g2;
-  u8g2Init(&u8g2);
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-  HAL_Delay(3000);
-  // HAL_TIM_Base_Start_IT(&htim1);
+  HAL_TIM_Base_Start(&htim1); // enable us delay timer
+  HAL_TIM_Base_Start_IT(&htim2);
+  u8g2Init(&u8g2);
+  HAL_Delay(1000);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  u8g2_FirstPage(&u8g2);
   while (1)
   {
-    // HAL_UART_Transmit(&huart1, (uint8_t *)buffer, strlen(buffer), 0xFFFF);
-    u8g2_FirstPage(&u8g2);
-    do
-    {
-      draw(&u8g2);
+    // HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+    // // auto str = fmt::format("Time:{}", sTime.Seconds);
+    // auto str = "Time:" + to_string(sTime.Hours) + ":" + to_string(sTime.Seconds);
+    // draw(&u8g2, (char *)str.c_str());
+    // HAL_Delay(100);
+    // do
+    // {
 
-      u8g2DrawTest(&u8g2);
-    } while (u8g2_NextPage(&u8g2));
+    //   u8g2DrawTest(&u8g2);
+    // } while (u8g2_NextPage(&u8g2));
     // HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
     // HAL_Delay(2500);
-    // doc.clear();
-    // HAL_RTC_GetTime(&hrtc, &GetTime, RTC_FORMAT_BIN); //获取时间
-    // /* Get the RTC current Date */
-    // HAL_RTC_GetDate(&hrtc, &GetDate, RTC_FORMAT_BIN); //获取日期
-    // doc["Hours"] = GetTime.Hours;
-    // doc["Minutes"] = GetTime.Minutes;
-    // doc["Seconds"] = GetTime.Seconds;
-    // doc["Year"] = GetDate.Year;
-    // doc["WeekDay"] = GetDate.WeekDay;
-    // doc["Date"] = GetDate.Date;
-    // serializeJsonPretty(doc, buffer, 200);
-    // HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, strlen(buffer));
-    //   HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-    //     ButtonDect();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -158,14 +150,16 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
    * in the RCC_OscInitTypeDef structure.
    */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
@@ -186,45 +180,53 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
 
 /* USER CODE BEGIN 4 */
 int time = 0;
-int falled = 0;
+bool falled = false;
 bool started = false;
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   HAL_Delay(20);
   if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12) == GPIO_PIN_RESET)
   {
-    falled = 1;
+    falled = true;
   }
-  else if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12) == GPIO_PIN_SET && falled)
+  if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12) == GPIO_PIN_SET && falled)
   {
     doc.clear();
     if (!started)
     {
+      started = true;
       time = 0;
       doc["time"] = time;
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
       doc["message"] = "Start";
       serializeJsonPretty(doc, buffer, 200);
       HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, strlen(buffer));
-      started = true;
+      draw(&u8g2, (char *)"Recording...");
     }
     else
     {
+      int temp = time;
       doc["message"] = "End";
-      doc["time"] = time;
+      doc["time"] = temp;
       serializeJsonPretty(doc, buffer, 200);
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
       HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, strlen(buffer));
+      auto str = "Duration:" + to_string(temp) + "ms";
+      draw(&u8g2, (char *)str.c_str());
       time = 0;
       started = false;
     }
-    falled = 0;
-
-    // HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+    falled = false;
   }
 }
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
