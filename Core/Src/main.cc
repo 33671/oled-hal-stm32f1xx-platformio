@@ -72,6 +72,7 @@ void SystemClock_Config(void);
 char wrongMessage[] = "error";
 StaticJsonDocument<200> doc;
 char buffer[200];
+char buffer_timer[200];
 RTC_TimeTypeDef sTime;
 u8g2_t u8g2;
 uint16_t get_adc()
@@ -87,6 +88,10 @@ uint16_t get_adc()
   }
   return 0;
 }
+int time = 0;
+int temp_time = 0;
+bool falled = false;
+bool started = false;
 /* USER CODE END 0 */
 
 /**
@@ -130,9 +135,11 @@ int main(void)
   HAL_TIM_Base_Start(&htim1); // enable us delay timer
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)buffer, 10);
+
   u8g2Init(&u8g2);
   HAL_Delay(1000);
-  uint16_t pwmVal = 0; // PWM占空比
+  uint16_t pwmVal = 0; // PWM占空�??
 
   /* USER CODE END 2 */
 
@@ -144,19 +151,22 @@ int main(void)
     while (pwmVal < 500)
     {
       pwmVal++;
-      __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, pwmVal); //修改比较值，修改占空比
-                                                           //		  TIM3->CCR1 = pwmVal;    与上方相同
+      __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, pwmVal); //修改比较值，修改占空�??
+                                                           //		  TIM3->CCR1 = pwmVal;    与上方相�??
       HAL_Delay(2);
     }
     while (pwmVal)
     {
       pwmVal--;
-      __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, pwmVal); //修改比较值，修改占空比
-                                                           //		  TIM3->CCR1 = pwmVal;     与上方相同
+      __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, pwmVal); //修改比较值，修改占空�??
+                                                           //		  TIM3->CCR1 = pwmVal;     与上方相�??
       HAL_Delay(2);
     }
     HAL_Delay(1000);
-
+    if (!started && temp_time == 0 && time >= 5000)
+    {
+      testDrawXBM(&u8g2);
+    }
     // int a = get_adc();
     // // HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
     // // // auto str = fmt::format("Time:{}", sTime.Seconds);
@@ -227,9 +237,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-int time = 0;
-bool falled = false;
-bool started = false;
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   HAL_Delay(20);
@@ -247,21 +255,22 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
       doc["time"] = time;
       HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_SET);
       doc["message"] = "Start";
-      serializeJsonPretty(doc, buffer, 200);
-      HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, strlen(buffer));
+      serializeJsonPretty(doc, buffer_timer, 200);
+      HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer_timer, strlen(buffer_timer));
       drawStr(&u8g2, (char *)"Recording...");
     }
     else
     {
-      int temp = time;
+      temp_time = time;
       doc["message"] = "End";
-      doc["time"] = temp;
-      serializeJsonPretty(doc, buffer, 200);
+      doc["time"] = temp_time;
+      serializeJsonPretty(doc, buffer_timer, 200);
       HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
-      HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, strlen(buffer));
-      auto str = "Duration:" + to_string(temp) + "ms";
+      HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer_timer, strlen(buffer_timer));
+      auto str = "Duration:" + to_string(temp_time) + "ms";
       drawStr(&u8g2, (char *)str.c_str());
       time = 0;
+      temp_time = 0;
       started = false;
     }
     falled = false;
@@ -270,13 +279,22 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   // HAL_UART_Transmit(&huart1, (uint8_t *)wrongMessage, strlen(wrongMessage), 0xFFFF);
-  if (time >= 99999)
-    time = 0;
-  time++;
-  if (started && time % 200 == 0)
+  if (htim->Instance == TIM2)
   {
-    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_4);
+    if (time >= 99999)
+      time = 0;
+    time++;
+    if (started && time % 200 == 0)
+    {
+      HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_4);
+    }
   }
+}
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  drawStr(&u8g2, buffer);
+  HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buffer, strlen(buffer));
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)buffer, 10);
 }
 /* USER CODE END 4 */
 
